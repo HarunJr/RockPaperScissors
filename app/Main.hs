@@ -1,10 +1,12 @@
 import System.Random
 import Control.Monad
+import Control.Monad.State
+import Data.Char
 
 data Move = Rock | Paper | Scissors deriving (Eq, Show, Read)
 data Result = Win | Lose | Tie deriving (Eq, Show)
 
-type Strategy = [Move] -> Move
+type Point = (Int, Int)
 
 score :: Move -> Move -> Result
 score Rock Scissors  = Win
@@ -15,102 +17,79 @@ score Paper Rock     = Win
 score Paper Scissors = Lose
 score _ _            = Tie
 
--- Fundermental Strategies
+capWord :: String -> String
+capWord "" = ""
+capWord (x:xs) = toUpper x : map toLower xs
 
--- /plays only Rock
-alwaysRock :: Strategy 
-alwaysRock _ = Rock 
+intToMove :: Int -> Move
+intToMove 1 = Rock
+intToMove 2 = Paper
+intToMove 3 = Scissors
 
--- Copy the previous move made by opponent
-copyCat :: Strategy
-copyCat [] = Rock
-copyCat (latest:_) = latest
+showResult :: Result -> IO ()
+showResult result = do
+    case result of
+        Win  -> putStrLn "You WON this round!"
+        Lose -> putStrLn "You LOST this round! :("
+        Tie  -> putStrLn "It's a TIE for this round"
 
-cycleS :: Strategy
-cycleS moves = 
-    case length moves `mod` 3 of
-        0 -> Rock
-        1 -> Paper
-        2 -> Scissors
+finalResults :: Int -> Int -> Int -> IO ()
+finalResults cPoint uPoint rounds= do
+    if uPoint > cPoint
+        then putStrLn "YOU WON THE MATCH"
+    else if uPoint < cPoint
+        then putStrLn "YOU LOST THE MATCH! :("
+    else playGame rounds (cPoint, uPoint)
 
-alternate :: Strategy -> Strategy -> Strategy
-alternate str1 str2 moves = 
-    case (length moves) `mod` 2 of
-        0 -> str1 moves
-        1 -> str2 moves
 
-switchUp :: Strategy -> Strategy
-switchUp str moves = 
-    case str moves of
-        Rock -> Paper
-        Paper -> Scissors
-        Scissors -> Rock
+evalPoints :: Result -> State Point ()
+evalPoints r = do
+    (x, y) <- get
+    case r of
+        Win -> put (x, y + 1)
+        Lose -> put (x + 1, y)
+        Tie -> put (x, y)
 
-switchDown :: Strategy -> Strategy
-switchDown str = switchUp (switchUp str)
-
--- Complex Strategies
-complexStrategy :: Strategy
-complexStrategy = 
-    switchUp copyCat `alternate` switchDown cycleS
-
-aiStrategy :: Strategy -> [Move] -> String -> Int -> IO ()
-aiStrategy strategy moves move rounds = do
-    case move of
-        "Rock" -> playGame strategy (Rock:moves) rounds
-        "Paper" -> playGame strategy (Paper:moves) rounds
-        "Scissors" -> playGame strategy (Scissors:moves) rounds
-        _ -> return ()
-
--- intToMove :: Int -> Move
--- intToMove 1 = Rock
--- intToMove 2 = Paper
--- intToMove 3 = Scissors
-    
-playGame :: Strategy -> [Move] -> Int -> IO ()
-playGame strategy moves rounds = do
-    putStrLn " Enter Move: \n Rock | Paper | Scissors | Quit\n"
+playGame :: Int -> Point -> IO ()
+playGame rounds point= do
+    putStrLn " Play a move: Rock | Paper | Scissors OR Quit"
+    putStrLn "--------------------------------------------------\n"
 
     input <- getLine
-    let myPlay = read input :: Move
+    let myPlay = read (capWord input) :: Move -- match Move text format using capWord
+    putStrLn ("You played: "++show myPlay++"\n")
 
-    let aIPlay = strategy moves
-    putStrLn $ "AI Plays: \n" ++ show aIPlay++"\n"
+    num <- randomRIO(1, 3) :: IO Int
+    let compMove = intToMove num
+    putStrLn ("The Comp plays: " ++ show compMove ++"\n \n")
 
-    let result =  score myPlay aIPlay
-    putStrLn $ "Result: " ++ show result ++"\n"
+    let result =  score myPlay compMove
+    -- showResult result
 
-    case myPlay `score` aIPlay of
-        Win  -> putStrLn "Yay You win!\n"
-        Lose -> putStrLn "You lost! beter luck next time :(\n"
-        Tie  -> putStrLn "It's a Tie :\ \n"
-               
-    when (rounds > 1) $ aiStrategy strategy moves input (rounds - 1) -- Use Control.Monad
+    let ((), gamePoints) = runState (evalPoints result) point
+    let compPoints = fst gamePoints
+    let userPoints = snd gamePoints
 
-    -- if rounds > 1
-    --     then aiStrategy strategy moves input (rounds - 1)
-    --     else return ()
-    -- case( rounds > )1 of
-    --     True -> aiStrategy strategy moves input (rounds - 1)
-    --     False -> return ()
+    putStrLn "--------------------------------------------------"
+    showResult result
+    putStrLn "--------------------------------------------------\n"
 
+    putStrLn ("You have: "++ show userPoints++" points and the computer has: "++ show compPoints ++" points\n \n")
 
-    -- case input of 
-    --     "Rock" -> playGame strategy (Rock:moves)
-    --     "Paper" -> playGame strategy (Paper:moves)
-    --     "Scissors" -> playGame strategy (Scissors:moves)
-    --     _ -> return ()
+    if rounds > 1 || result == Tie
+        then  playGame (rounds - 1) gamePoints
+    else do
+            putStrLn "--------------------------------------------------"
+            finalResults compPoints userPoints rounds
+            putStrLn "--------------------------------------------------\n"
+            return ()
 
--- getRandomNumber :: IO ()
--- getRandomNumber = do
---     num <- randomRIO (0, 3) :: IO Int
---     let randomMove =  intToMove num
---     putStrLn ("The move is " ++ show randomMove)
+    -- when (rounds > 1 || result == Tie) $ playGame (rounds - 1) gamePoints -- Use Control.Monad
 
 main :: IO ()
 main = do
-    putStrLn " How many rounds?\n 1 | 3 | 5"
+    putStrLn " How many rounds?  1 | 3 | 5\n"
     rounds <- getLine
-
-    playGame complexStrategy [] (read rounds)
+    putStrLn (show (read rounds :: Int)++" rounds\n")
+    playGame (read rounds) (0, 0)
     putStrLn "Game Over!"
